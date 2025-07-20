@@ -173,27 +173,6 @@ if echo "\$LOG" | grep -iE "\$MATCH_WORDS"; then
     echo "\$(date): Log issue detected – will restart \$SERVICE_NAME" >> "${log_file}"
     RESTART_FLAG=1
 fi
-
-ROLE_FILE="/root/backhaul/role.txt"
-if [[ -f "\$ROLE_FILE" && "\$(cat \$ROLE_FILE)" == "client" ]]; then
-    # Check HTTP on Tunnel Port
-    TUNNEL_CODE=\$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${tunnel_port})
-    if [[ "\$TUNNEL_CODE" != "200" ]]; then
-        echo "\$(date): HTTP check on tunnel port failed (\$TUNNEL_CODE) – will restart \$SERVICE_NAME" >> "${log_file}"
-        RESTART_FLAG=1
-    fi
-
-    # Check HTTP on Target Port
-    TARGET_CODE=\$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${target_port})
-    if [[ "\$TARGET_CODE" != "200" ]]; then
-        echo "\$(date): HTTP check on target port failed (\$TARGET_CODE) – will restart \$SERVICE_NAME" >> "${log_file}"
-        RESTART_FLAG=1
-    fi
-fi
-
-if [[ "\$RESTART_FLAG" -eq 1 ]]; then
-    systemctl restart "\$SERVICE_NAME"
-fi
 EOF
 
 chmod +x "$monitor_script"
