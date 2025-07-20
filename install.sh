@@ -164,7 +164,7 @@ cat > "$monitor_script" <<EOF
 #!/bin/bash
 
 SERVICE_NAME="${service_name}"
-MATCH_WORDS="error|fail|broken|timeout|warning"
+MATCH_WORDS="error|fail|broken|timeout"
 LOG=\$(journalctl -u "\$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 
 RESTART_FLAG=0
