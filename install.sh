@@ -22,7 +22,7 @@ echo -e "${YELLOW}${ARROW} Creating /root/backhaul and downloading binary...${NC
 mkdir -p /root/backhaul
 cd /root/backhaul || { echo -e "${RED}${CROSS} Failed to access /root/backhaul.${NC}"; exit 1; }
 
-wget -q --show-progress https://github.com/Musixal/Backhaul/releases/download/v0.6.5/backhaul_linux_amd64.tar.gz
+wget -q --show-progress https://github.com/Musixal/Backhaul/releases/download/v0.7.1/backhaul_linux_amd64.tar.gz
 tar xvf backhaul_linux_amd64.tar.gz > /dev/null
 rm backhaul_linux_amd64.tar.gz
 chmod +x backhaul
