@@ -40,8 +40,8 @@ select protocol in "tcp" "ws" "tcpmux" "wsmux" "wssmux"; do
 done
 
 # Step 3: Detect role
-public_ip=$(curl -s https://api.ipify.org)
-country=$(curl -s "http://ip-api.com/line/$public_ip?fields=countryCode")
+public_ip=$(curl -s https://api.ipify.org || echo "0.0.0.0")
+country=$(curl -s "http://ip-api.com/line/$public_ip?fields=countryCode" || echo "XX")
 
 if [[ "$country" == "IR" ]]; then
     role="server"
@@ -50,7 +50,6 @@ else
     role="client"
     echo "Role = CLIENT"
 fi
-
 
 echo -e "${CYAN}Public IP: ${GREEN}$public_ip${NC} | Country: ${GREEN}$country${NC} → Role: ${YELLOW}$role${NC}"
 
@@ -62,8 +61,9 @@ if [[ "$role" == "client" ]]; then
 else
     read -rp "Enter tunnel port to listen on (e.g., 5605): " tunnel_port
     read -rp "Enter destination port to forward (e.g., 2020): " target_port
-    target_address="0.0.0.0"  # فقط برای تمیزی ساخت فایل config
+    target_address="0.0.0.0"
 fi
+
 config_path="/root/backhaul/${protocol}.toml"
 echo -e "${YELLOW}${ARROW} Generating config at ${CYAN}$config_path${NC}"
 
@@ -82,7 +82,7 @@ mux_version = 1
 mux_framesize = 32768
 mux_recievebuffer = 4194304
 mux_streambuffer = 65536
-sniffer = false 
+sniffer = false
 web_port = 0
 sniffer_log = "/root/backhaul.json"
 log_level = "info"
@@ -92,9 +92,9 @@ else
 cat > "$config_path" <<EOF
 [client]
 remote_addr = "$target_address:$tunnel_port"
-edge_ip = "" 
+edge_ip = ""
 transport = "$protocol"
-token = "Ragacloud" 
+token = "Ragacloud"
 connection_pool = 8
 aggressive_pool = false
 keepalive_period = 75
@@ -102,10 +102,10 @@ dial_timeout = 10
 nodelay = true
 retry_interval = 3
 mux_version = 1
-mux_framesize = 32768 
+mux_framesize = 32768
 mux_recievebuffer = 4194304
-mux_streambuffer = 65536 
-sniffer = false 
+mux_streambuffer = 65536
+sniffer = false
 web_port = 0
 sniffer_log = "/root/backhaul.json"
 log_level = "info"
@@ -153,40 +153,38 @@ else
     echo -e "${RED}${CROSS} Failed to start service. Use 'journalctl -xe' for logs.${NC}"
 fi
 
-# Step 8: Create dynamic journal + HTTP health monitor for the selected protocol
+# Step 8: Create monitor script
+monitor_script="/root/backhaul/${protocol}_monitor.sh"
+LOG_FILE="/var/log/${protocol}_monitor.log"
+
+cat > "$monitor_script" <<'EOF'
 #!/bin/bash
-
-SERVICE_NAME="tcpmux.service"
+SERVICE_NAME="$1"
+LOG_FILE="$2"
 MATCH_WORDS="error|fail|broken|timeout|warning"
-LOG_FILE="/var/log/tcpmux_monitor.log"
 
-# گرفتن لاگ 2 دقیقه گذشته
 LOG=$(journalctl -u "$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 
-# بررسی لاگ برای کلمات کلیدی
 if echo "$LOG" | grep -iE "$MATCH_WORDS" >/dev/null 2>&1; then
     echo "$(date): Log issue detected – restarting $SERVICE_NAME" >> "$LOG_FILE"
-    
-    # ری‌استارت سرویس
     if systemctl restart "$SERVICE_NAME"; then
         echo "$(date): $SERVICE_NAME successfully restarted." >> "$LOG_FILE"
     else
         echo "$(date): Failed to restart $SERVICE_NAME!" >> "$LOG_FILE"
     fi
 fi
-
+EOF
 
 chmod +x "$monitor_script"
 
-# Save role to file so monitoring script can access it
+# Step 9: Save role
 echo "$role" > /root/backhaul/role.txt
 
-# Add cron job if not already present
-cron_line="*/2 * * * * $monitor_script"
+# Step 10: Add cron job
+cron_line="*/2 * * * * $monitor_script ${protocol}.service $LOG_FILE"
 if ! crontab -l 2>/dev/null | grep -Fq "$monitor_script"; then
     ( crontab -l 2>/dev/null; echo "$cron_line" ) | crontab -
     echo -e "${GREEN}${CHECKMARK} Cron job added for ${protocol} monitor.${NC}"
 else
     echo -e "${YELLOW}${ARROW} Cron job already exists for ${protocol}.${NC}"
 fi
-
