@@ -154,26 +154,27 @@ else
 fi
 
 # Step 8: Create dynamic journal + HTTP health monitor for the selected protocol
-monitor_script="/usr/local/bin/check_${protocol}_journal.sh"
-log_file="/var/log/${protocol}_monitor.log"
-service_name="${protocol}.service"
-
-echo -e "${YELLOW}${ARROW} Creating journal + HTTP health monitor: ${CYAN}$monitor_script${NC}"
-
-cat > "$monitor_script" <<EOF
 #!/bin/bash
 
-SERVICE_NAME="${service_name}"
-MATCH_WORDS="error|fail|broken|timeout"
-LOG=\$(journalctl -u "\$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
+SERVICE_NAME="tcpmux.service"
+MATCH_WORDS="error|fail|broken|timeout|warning"
+LOG_FILE="/var/log/tcpmux_monitor.log"
 
-RESTART_FLAG=0
+# گرفتن لاگ 2 دقیقه گذشته
+LOG=$(journalctl -u "$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 
-if echo "\$LOG" | grep -iE "\$MATCH_WORDS"; then
-    echo "\$(date): Log issue detected – will restart \$SERVICE_NAME" >> "${log_file}"
-    RESTART_FLAG=1
+# بررسی لاگ برای کلمات کلیدی
+if echo "$LOG" | grep -iE "$MATCH_WORDS" >/dev/null 2>&1; then
+    echo "$(date): Log issue detected – restarting $SERVICE_NAME" >> "$LOG_FILE"
+    
+    # ری‌استارت سرویس
+    if systemctl restart "$SERVICE_NAME"; then
+        echo "$(date): $SERVICE_NAME successfully restarted." >> "$LOG_FILE"
+    else
+        echo "$(date): Failed to restart $SERVICE_NAME!" >> "$LOG_FILE"
+    fi
 fi
-EOF
+
 
 chmod +x "$monitor_script"
 
