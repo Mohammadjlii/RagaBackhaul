@@ -223,14 +223,3 @@ echo -e "${GREEN}${CHECKMARK} Monitor service and timer created for ${protocol}.
 # Step 10: Save role
 echo "$role" > /root/backhaul/role.txt
 
-# Step 11: Add cron job (پاک کردن قبلی و جایگزینی جدید)
-cron_line="*/2 * * * * $monitor_script"
-
-# حذف همه کرون‌جاب‌های مربوط به این پروتکل
-tmp_cron=$(mktemp)
-crontab -l 2>/dev/null | grep -v "${protocol}_monitor.sh" > "$tmp_cron"
-echo "$cron_line" >> "$tmp_cron"
-crontab "$tmp_cron"
-rm -f "$tmp_cron"
-
-echo -e "${GREEN}${CHECKMARK} Monitor script and cron job updated for ${protocol}.${NC}"
