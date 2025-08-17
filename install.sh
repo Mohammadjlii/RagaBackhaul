@@ -162,10 +162,17 @@ fi
 monitor_script="/root/backhaul/${protocol}_monitor.sh"
 LOG_FILE="/var/log/${protocol}_monitor.log"
 
-# پاک کردن تمام مانیتورهای قبلی
-echo -e "${YELLOW}${ARROW} Removing old monitor scripts...${NC}"
+# پاک کردن تمام مانیتورهای قبلی + کرون‌جاب‌هاشون
+echo -e "${YELLOW}${ARROW} Removing old monitor scripts and cron jobs...${NC}"
 rm -f /root/backhaul/*_monitor.sh
 
+# حذف همه کرون‌جاب‌های قبلی که به مانیتور مربوط بودن
+tmp_cron=$(mktemp)
+crontab -l 2>/dev/null | grep -v "_monitor.sh" > "$tmp_cron"
+crontab "$tmp_cron"
+rm -f "$tmp_cron"
+
+# ساخت مانیتور جدید
 cat > "$monitor_script" <<EOF
 #!/bin/bash
 SERVICE_NAME="${protocol}.service"
@@ -185,6 +192,7 @@ fi
 EOF
 
 chmod +x "$monitor_script"
+
 
 # Step 9: Save role
 echo "$role" > /root/backhaul/role.txt
