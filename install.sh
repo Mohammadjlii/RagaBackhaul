@@ -162,11 +162,9 @@ fi
 monitor_script="/root/backhaul/${protocol}_monitor.sh"
 LOG_FILE="/var/log/${protocol}_monitor.log"
 
-# پاک کردن نسخه قبلی اگر وجود داشت
-if [[ -f "$monitor_script" ]]; then
-    echo -e "${YELLOW}${ARROW} Removing old monitor script...${NC}"
-    rm -f "$monitor_script"
-fi
+# پاک کردن تمام مانیتورهای قبلی
+echo -e "${YELLOW}${ARROW} Removing old monitor scripts...${NC}"
+rm -f /root/backhaul/*_monitor.sh
 
 cat > "$monitor_script" <<EOF
 #!/bin/bash
