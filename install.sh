@@ -159,18 +159,12 @@ else
 fi
 
 # Step 8: Create monitor script
-monitor_script="/root/backhaul/${protocol}_monitor.sh"
+monitor_script="/usr/local/bin/${protocol}_monitor.sh"
 LOG_FILE="/var/log/${protocol}_monitor.log"
 
-# پاک کردن تمام مانیتورهای قبلی + کرون‌جاب‌هاشون
-echo -e "${YELLOW}${ARROW} Removing old monitor scripts and cron jobs...${NC}"
-rm -f /root/backhaul/*_monitor.sh
-
-# حذف همه کرون‌جاب‌های قبلی که به مانیتور مربوط بودن
-tmp_cron=$(mktemp)
-crontab -l 2>/dev/null | grep -v "_monitor.sh" > "$tmp_cron"
-crontab "$tmp_cron"
-rm -f "$tmp_cron"
+# پاک کردن مانیتورهای قبلی
+echo -e "${YELLOW}${ARROW} Removing old monitor scripts...${NC}"
+rm -f /usr/local/bin/*_monitor.sh
 
 # ساخت مانیتور جدید
 cat > "$monitor_script" <<EOF
@@ -193,11 +187,43 @@ EOF
 
 chmod +x "$monitor_script"
 
+# Step 9: Create systemd monitor service
+monitor_service="/etc/systemd/system/${protocol}-monitor.service"
+monitor_timer="/etc/systemd/system/${protocol}-monitor.timer"
 
-# Step 9: Save role
+cat > "$monitor_service" <<EOF
+[Unit]
+Description=Monitor for Backhaul ${protocol} Service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=$monitor_script
+EOF
+
+cat > "$monitor_timer" <<EOF
+[Unit]
+Description=Run ${protocol}-monitor every 2 minutes
+
+[Timer]
+OnUnitActiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# فعال‌سازی سرویس و تایمر
+systemctl daemon-reexec
+systemctl enable --now "${protocol}-monitor.timer"
+
+echo -e "${GREEN}${CHECKMARK} Monitor service and timer created for ${protocol}.${NC}"
+
+
+# Step 10: Save role
 echo "$role" > /root/backhaul/role.txt
 
-# Step 10: Add cron job (پاک کردن قبلی و جایگزینی جدید)
+# Step 11: Add cron job (پاک کردن قبلی و جایگزینی جدید)
 cron_line="*/2 * * * * $monitor_script"
 
 # حذف همه کرون‌جاب‌های مربوط به این پروتکل
