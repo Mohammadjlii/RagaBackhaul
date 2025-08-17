@@ -162,20 +162,26 @@ fi
 monitor_script="/root/backhaul/${protocol}_monitor.sh"
 LOG_FILE="/var/log/${protocol}_monitor.log"
 
-cat > "$monitor_script" <<'EOF'
+# اگر مانیتور قدیمی وجود داشت حذف کن
+if [[ -f "$monitor_script" ]]; then
+    echo -e "${YELLOW}${ARROW} Removing old monitor script...${NC}"
+    rm -f "$monitor_script"
+fi
+
+cat > "$monitor_script" <<EOF
 #!/bin/bash
-SERVICE_NAME="$1"
-LOG_FILE="$2"
+SERVICE_NAME="${protocol}.service"
+LOG_FILE="$LOG_FILE"
 MATCH_WORDS="error|fail|broken|timeout|warning"
 
-LOG=$(journalctl -u "$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
+LOG=\$(journalctl -u "\$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 
-if echo "$LOG" | grep -iE "$MATCH_WORDS" >/dev/null 2>&1; then
-    echo "$(date): Log issue detected – restarting $SERVICE_NAME" >> "$LOG_FILE"
-    if systemctl restart "$SERVICE_NAME"; then
-        echo "$(date): $SERVICE_NAME successfully restarted." >> "$LOG_FILE"
+if echo "\$LOG" | grep -iE "\$MATCH_WORDS" >/dev/null 2>&1; then
+    echo "\$(date): Log issue detected – restarting \$SERVICE_NAME" >> "\$LOG_FILE"
+    if systemctl restart "\$SERVICE_NAME"; then
+        echo "\$(date): \$SERVICE_NAME successfully restarted." >> "\$LOG_FILE"
     else
-        echo "$(date): Failed to restart $SERVICE_NAME!" >> "$LOG_FILE"
+        echo "\$(date): Failed to restart \$SERVICE_NAME!" >> "\$LOG_FILE"
     fi
 fi
 EOF
