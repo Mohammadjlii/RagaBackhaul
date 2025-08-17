@@ -162,7 +162,7 @@ fi
 monitor_script="/root/backhaul/${protocol}_monitor.sh"
 LOG_FILE="/var/log/${protocol}_monitor.log"
 
-# اگر مانیتور قدیمی وجود داشت حذف کن
+# پاک کردن نسخه قبلی اگر وجود داشت
 if [[ -f "$monitor_script" ]]; then
     echo -e "${YELLOW}${ARROW} Removing old monitor script...${NC}"
     rm -f "$monitor_script"
@@ -191,11 +191,13 @@ chmod +x "$monitor_script"
 # Step 9: Save role
 echo "$role" > /root/backhaul/role.txt
 
-# Step 10: Add cron job
-cron_line="*/2 * * * * $monitor_script ${protocol}.service $LOG_FILE"
-if ! crontab -l 2>/dev/null | grep -Fq "$monitor_script"; then
-    ( crontab -l 2>/dev/null; echo "$cron_line" ) | crontab -
-    echo -e "${GREEN}${CHECKMARK} Cron job added for ${protocol} monitor.${NC}"
-else
-    echo -e "${YELLOW}${ARROW} Cron job already exists for ${protocol}.${NC}"
-fi
+# Step 10: Add cron job (پاک کردن قبلی و جایگزینی جدید)
+cron_line="*/2 * * * * $monitor_script"
+tmp_cron=$(mktemp)
+
+crontab -l 2>/dev/null | grep -v "$monitor_script" > "$tmp_cron"
+echo "$cron_line" >> "$tmp_cron"
+crontab "$tmp_cron"
+rm -f "$tmp_cron"
+
+echo -e "${GREEN}${CHECKMARK} Monitor script and cron job updated for ${protocol}.${NC}"
