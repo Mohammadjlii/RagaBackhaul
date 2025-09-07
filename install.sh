@@ -27,7 +27,7 @@ if [[ -f /root/backhaul/backhaul ]]; then
     rm -f /root/backhaul/backhaul
 fi
 
-wget -q --show-progress https://github.com/Musixal/Backhaul/releases/download/v0.7.1/backhaul_linux_amd64.tar.gz
+wget -q --show-progress https://github.com/Musixal/Backhaul/releases/download/v0.7.2/backhaul_linux_amd64.tar.gz
 tar xvf backhaul_linux_amd64.tar.gz > /dev/null
 rm backhaul_linux_amd64.tar.gz
 chmod +x backhaul
