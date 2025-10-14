@@ -31,6 +31,7 @@ err() { printf "${RED}[ERROR] %s${RESET}\n" "$1"; exit 1; }
 # ---------------------------
 # Utility functions
 # ---------------------------
+
 detect_arch() {
     local raw_arch
     raw_arch="$(uname -m)"
@@ -77,7 +78,12 @@ prompt_ports_server() {
     tunnel_port="${tunnel_port:-3080}"
     read -rp "Enter User port [default 443]: " user_port
     user_port="${user_port:-443}"
-    echo "$tunnel_port:$user_port"
+    echo "$tunnel_port $user_port"
+}
+
+prompt_mux() {
+    read -rp "Enter MUX concurrency [default 8]: " mux
+    echo "${mux:-8}"
 }
 
 generate_config() {
@@ -110,7 +116,6 @@ EOF
         [[ -n "$mux_con" ]] && echo -e "mux_con = $mux_con\nmux_version = 1" >> "$config_file"
         [[ "$proto" == "wss" || "$proto" == "wssmux" ]] && echo -e "tls_cert = \"${TLS_CERT}\"\ntls_key = \"${TLS_KEY}\"" >> "$config_file"
     else
-        # client همانند قبل
         cat >> "$config_file" <<EOF
 [client]
 remote_addr = "0.0.0.0:${tunnel_port}"
@@ -135,7 +140,6 @@ EOF
         [[ -n "$mux_con" ]] && echo -e "mux_version = 1\nmux_con = $mux_con" >> "$config_file"
     fi
 }
-
 
 create_service() {
     local svc_name="$1" config_file="$2"
@@ -204,11 +208,6 @@ EOF
     systemctl enable --now "${proto}-monitor.timer"
 }
 
-prompt_mux() {
-    read -rp "Enter MUX concurrency [default 8]: " mux
-    echo "${mux:-8}"
-}
-
 install_flow() {
     clear
     echo -e "${BLUE}${BOLD}===== Raga Backhaul Installer =====${RESET}"
@@ -218,10 +217,13 @@ install_flow() {
     download_backhaul "$arch" "$tmpd"
     role=$(get_role)
     proto=$(prompt_protocol)
-if [[ "$role" == "server" ]]; then
-    read -r tunnel_port user_port <<< "$(prompt_ports_server)"
-fi
-    [[ "$proto" =~ mux ]] && mux_con=$(prompt_mux)
+    if [[ "$role" == "server" ]]; then
+        read -r tunnel_port user_port <<< "$(prompt_ports_server)"
+    else
+        read -r tunnel_port <<< "$(prompt_ports_server)"
+        user_port=""
+    fi
+    [[ "$proto" =~ mux ]] && mux_con=$(prompt_mux) || mux_con=""
     # config & service name with counter
     base_name="$proto"
     config_file="$DESTDIR/$base_name.toml"
@@ -232,10 +234,10 @@ fi
         config_file="$DESTDIR/${base_name}${counter}.toml"
         svc_name="backhaul.${proto}${counter}.service"
     done
-    generate_config "$role" "$proto" "$tunnel_port" "$user_port" "${mux_con:-}" "$config_file"
+    generate_config "$role" "$proto" "$tunnel_port" "$user_port" "$mux_con" "$config_file"
     create_service "$svc_name" "$config_file"
     create_monitor "$proto" "$svc_name"
-    log "Raga Backhaul installed with protocol $proto on port $port"
+    log "Raga Backhaul installed with protocol $proto on tunnel port $tunnel_port and user port $user_port"
 }
 
 list_services() {
