@@ -204,6 +204,11 @@ EOF
     systemctl enable --now "${proto}-monitor.timer"
 }
 
+prompt_mux() {
+    read -rp "Enter MUX concurrency [default 8]: " mux
+    echo "${mux:-8}"
+}
+
 install_flow() {
     clear
     echo -e "${BLUE}${BOLD}===== Raga Backhaul Installer =====${RESET}"
@@ -227,7 +232,7 @@ fi
         config_file="$DESTDIR/${base_name}${counter}.toml"
         svc_name="backhaul.${proto}${counter}.service"
     done
-    generate_config "$role" "$proto" "$port" "${mux_con:-}" "$config_file"
+    generate_config "$role" "$proto" "$tunnel_port" "$user_port" "${mux_con:-}" "$config_file"
     create_service "$svc_name" "$config_file"
     create_monitor "$proto" "$svc_name"
     log "Raga Backhaul installed with protocol $proto on port $port"
