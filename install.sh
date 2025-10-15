@@ -72,14 +72,15 @@ while true; do
                     echo -e "${GREEN}${CHECKMARK} Backhaul downloaded and ready.${NC}"
                 fi
 
-                # === Step 2: Protocol selection ===
+                # Step 2: Get user input
                 echo -e "${YELLOW}${ARROW} Select the tunnel protocol:${NC}"
-                select protocol in "tcp" "ws" "tcpmux" "wsmux" "wssmux"; do
+                select protocol in "tcp" "ws" "wss" "tcpmux" "wsmux" "wssmux"; do
                     case $protocol in
-                        tcp|ws|tcpmux|wsmux|wssmux) break ;;
+                        tcp|ws|wss|tcpmux|wsmux|wssmux) break ;;
                         *) echo -e "${RED}Invalid option. Choose again.${NC}" ;;
                     esac
                 done
+
 
                 # === Step 3: Detect role ===
                 public_ip=$(curl -s https://api.ipify.org || echo "0.0.0.0")
