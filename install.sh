@@ -1,177 +1,218 @@
-#!/usr/bin/env bash
-set -euo pipefail
-IFS=$'\n\t'
+#!/bin/bash
 
-# ================================
-# Raga Backhaul Installer / Uninstaller
-# ================================
-
-# Default settings
-: "${BACKHAUL_REPO:=Musixal/Backhaul}"
-: "${BACKHAUL_VERSION:=v0.7.2}"
-: "${PLATFORM:=linux}"
-: "${DESTDIR:=/root/backhaul}"
-: "${TLS_CERT:=/root/cert.crt}"
-: "${TLS_KEY:=/root/private.key}"
-
-# Colors
-RED='\033[0;31m'
+# === Colors & Symbols ===
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-BOLD='\033[1m'
-RESET='\033[0m'
-ARROW='=>'
-CHECKMARK='✔'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+MAGENTA='\033[1;35m'
+BLUE_BG='\033[1;44m'
+NC='\033[0m'
 
-log() { printf "${GREEN}[+] %s${RESET}\n" "$1"; }
-warn() { printf "${YELLOW}[!] %s${RESET}\n" "$1"; }
-err() { printf "${RED}[ERROR] %s${RESET}\n" "$1"; exit 1; }
+CHECKMARK="\xE2\x9C\x94"
+CROSS="\xE2\x9D\x8C"
+ARROW="➜"
+LINE="========================================"
 
-# ---------------------------
-# Utility functions
-# ---------------------------
+clear
 
-detect_arch() {
-    local raw_arch
-    raw_arch="$(uname -m)"
-    case "$raw_arch" in
-      x86_64|amd64) echo "amd64" ;;
-      aarch64|arm64) echo "arm64" ;;
-      armv7l|armv7) echo "armv7" ;;
-      i386|i686) echo "386" ;;
-      *) read -rp "Enter release arch (amd64, arm64, 386): " arch; echo "${arch:-amd64}" ;;
-    esac
-}
+# === Logo RAGA ===
+echo -e "${BLUE_BG}${CYAN}  ██████╗  █████╗  ██████╗  █████╗  ${NC}"
+echo -e "${BLUE_BG}${CYAN}  ██╔══██╗██╔══██╗██╔════╝ ██╔══██╗ ${NC}"
+echo -e "${BLUE_BG}${CYAN}  ██████╔╝███████║██║  ███╗███████║ ${NC}"
+echo -e "${BLUE_BG}${CYAN}  ██╔═══╝ ██╔══██║██║   ██║██╔══██║ ${NC}"
+echo -e "${BLUE_BG}${CYAN}  ██║ ██║ ██║  ██║╚██████╔╝██║  ██║ ${NC}"
+echo -e "${BLUE_BG}${CYAN}  ╚═╝ ╚═╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ${NC}"
+echo -e "\n${MAGENTA}       🌩️  RagaCloud Backhaul Manager  🌩️${NC}\n"
 
-download_backhaul() {
-    local arch="$1"
-    local tmpd="$2"
-    local release_filename="backhaul_${PLATFORM}_${arch}.tar.gz"
-    local release_url="https://github.com/${BACKHAUL_REPO}/releases/download/${BACKHAUL_VERSION}/${release_filename}"
-    log "Downloading backhaul: $release_url"
-    curl -fL --progress-bar -o "$tmpd/$release_filename" "$release_url" || err "Download failed"
-    tar -xzf "$tmpd/$release_filename" -C "$tmpd"
-    [[ -f "$tmpd/backhaul" ]] || err "'backhaul' binary not found"
-    mkdir -p "$DESTDIR"
-    mv "$tmpd/backhaul" "$DESTDIR/backhaul"
-    chmod +x "$DESTDIR/backhaul"
-}
+# === Main Menu ===
+while true; do
+    echo -e "${LINE}"
+    echo -e "${YELLOW}[1]${NC} Install Backhaul"
+    echo -e "${YELLOW}[2]${NC} Uninstall Backhaul (light)"
+    echo -e "${YELLOW}[0]${NC} Exit"
+    echo -e "${LINE}"
+    read -rp "Select an option: " choice
 
-get_role() {
-    local ip country
-    ip="$(curl -s https://api.ipify.org || echo "0.0.0.0")"
-    country="$(curl -s "http://ip-api.com/line/$ip?fields=countryCode" || echo "XX")"
-    [[ "${country^^}" == "IR" ]] && echo "server" || echo "client"
-}
+    case $choice in
+        1)
+            # ============================
+            # Install Backhaul (full script)
+            # ============================
+            # Call the install routine as a function to keep clean
+            install_backhaul() {
+                clear
+                echo -e "${CYAN} $LINE"
+                echo -e "  🚀  ${GREEN}Backhaul Tunnel Setup Script${NC}"
+                echo -e " $LINE${NC}"
 
-prompt_protocol() {
-    local protocols=(tcp tcpmux ws wss wsmux wssmux udp)
-    PS3="Select transport protocol: "
-    select proto in "${protocols[@]}"; do
-        [[ -n "$proto" ]] && { echo "$proto"; break; } || warn "Invalid selection."
-    done
-}
+                # === Step 1: Prepare environment ===
+                echo -e "${YELLOW}${ARROW} Preparing Backhaul environment...${NC}"
+                mkdir -p /root/backhaul
+                cd /root/backhaul || { echo -e "${RED}${CROSS} Failed to access /root/backhaul.${NC}"; exit 1; }
 
-prompt_ports_server() {
-    read -rp "Enter Tunnel port [default 3080]: " tunnel_port
-    tunnel_port="${tunnel_port:-3080}"
-    read -rp "Enter User port [default 443]: " user_port
-    user_port="${user_port:-443}"
-    echo "$tunnel_port $user_port"
-}
+                # Check if Backhaul already exists
+                if [[ -x "/root/backhaul/backhaul" ]]; then
+                    echo -e "${GREEN}${CHECKMARK} Existing Backhaul binary detected – skipping download.${NC}"
+                else
+                    echo -e "${YELLOW}${ARROW} Downloading Backhaul binary for your architecture...${NC}"
+                    arch=$(uname -m)
+                    case "$arch" in
+                        x86_64) file_name="backhaul_linux_amd64.tar.gz" ;;
+                        aarch64) file_name="backhaul_linux_arm64.tar.gz" ;;
+                        armv7l) file_name="backhaul_linux_armv7.tar.gz" ;;
+                        *) echo -e "${RED}${CROSS} Unsupported architecture: $arch${NC}"; exit 1 ;;
+                    esac
+                    url="https://github.com/Musixal/Backhaul/releases/download/v0.7.2/$file_name"
+                    wget -q --show-progress "$url" -O "$file_name" || { echo -e "${RED}${CROSS} Download failed.${NC}"; exit 1; }
+                    tar xvf "$file_name" > /dev/null
+                    mv backhaul_linux_* backhaul 2>/dev/null || true
+                    rm "$file_name"
+                    chmod +x backhaul
+                    echo -e "${GREEN}${CHECKMARK} Backhaul downloaded and ready.${NC}"
+                fi
 
-prompt_mux() {
-    read -rp "Enter MUX concurrency [default 8]: " mux
-    echo "${mux:-8}"
-}
+                # === Step 2: Protocol selection ===
+                echo -e "${YELLOW}${ARROW} Select the tunnel protocol:${NC}"
+                select protocol in "tcp" "ws" "tcpmux" "wsmux" "wssmux"; do
+                    case $protocol in
+                        tcp|ws|tcpmux|wsmux|wssmux) break ;;
+                        *) echo -e "${RED}Invalid option. Choose again.${NC}" ;;
+                    esac
+                done
 
-generate_config() {
-    local role="$1" proto="$2" tunnel_port="$3" user_port="$4" mux_con="$5" config_file="$6"
-    cat > "$config_file" <<EOF
-# Auto-generated Backhaul config
-EOF
+                # === Step 3: Detect role ===
+                public_ip=$(curl -s https://api.ipify.org || echo "0.0.0.0")
+                country=$(curl -s "http://ip-api.com/line/$public_ip?fields=countryCode" || echo "XX")
+                if [[ "$country" == "IR" ]]; then role="server"; else role="client"; fi
+                echo -e "${CYAN}Public IP: ${GREEN}$public_ip${NC} | Country: ${GREEN}$country${NC} → Role: ${YELLOW}$role${NC}"
 
-    if [[ "$role" == "server" ]]; then
-        cat >> "$config_file" <<EOF
+                # === Step 4: Create config file ===
+                config_path="/root/backhaul/${protocol}.toml"
+                token="RagaCloud"
+                tls_cert="/root/cert.crt"
+                tls_key="/root/private.key"
+                web_port=0
+
+                if [[ "$role" == "server" ]]; then
+                    read -rp "Enter tunnel port to listen on (e.g., 3080): " tunnel_port
+                    read -rp "Enter destination port to forward (e.g., 2020): " target_port
+                    cat > "$config_path" <<EOF
 [server]
-bind_addr = "0.0.0.0:${tunnel_port}"
-transport = "${proto}"
+bind_addr = "0.0.0.0:$tunnel_port"
+transport = "$protocol"
 accept_udp = false
-token = "Ragacloud"
+token = "$token"
 keepalive_period = 75
-nodelay = true
+nodelay = false
 channel_size = 2048
 heartbeat = 40
+mux_con = 8
+mux_version = 1
+mux_framesize = 32768
+mux_recievebuffer = 4194304
+mux_streambuffer = 65536
 sniffer = false
-web_port = 2060
-sniffer_log = "/root/backhaul.json"
+web_port = $web_port
+sniffer_log = "/root/log.json"
 log_level = "info"
 skip_optz = true
 mss = 1360
 so_rcvbuf = 4194304
 so_sndbuf = 1048576
-ports = ["${user_port}"]
 EOF
-        [[ -n "$mux_con" ]] && echo -e "mux_con = $mux_con\nmux_version = 1" >> "$config_file"
-        [[ "$proto" == "wss" || "$proto" == "wssmux" ]] && echo -e "tls_cert = \"${TLS_CERT}\"\ntls_key = \"${TLS_KEY}\"" >> "$config_file"
-    else
-        cat >> "$config_file" <<EOF
+                    if [[ "$protocol" == "wss" || "$protocol" == "wssmux" ]]; then
+                        echo "tls_cert = \"$tls_cert\"" >> "$config_path"
+                        echo "tls_key = \"$tls_key\"" >> "$config_path"
+                    fi
+                    echo -e "\nports = [\"$target_port\"]" >> "$config_path"
+                else
+                    read -rp "Enter server address (e.g., 1.2.3.4): " target_address
+                    read -rp "Enter tunnel port (e.g., 3080): " tunnel_port
+                    cat > "$config_path" <<EOF
 [client]
-remote_addr = "0.0.0.0:${tunnel_port}"
-transport = "${proto}"
+remote_addr = "$target_address:$tunnel_port"
 edge_ip = ""
-token = "Ragacloud"
+transport = "$protocol"
+token = "$token"
 connection_pool = 8
 aggressive_pool = false
 keepalive_period = 75
-dial_timeout = 10
+nodelay = false
 retry_interval = 3
-nodelay = true
+dial_timeout = 10
+mux_version = 1
+mux_framesize = 32768
+mux_recievebuffer = 4194304
+mux_streambuffer = 65536
 sniffer = false
-web_port = 2060
-sniffer_log = "/root/backhaul.json"
+web_port = $web_port
+sniffer_log = "/root/log.json"
 log_level = "info"
 skip_optz = true
 mss = 1360
 so_rcvbuf = 1048576
 so_sndbuf = 4194304
 EOF
-        [[ -n "$mux_con" ]] && echo -e "mux_version = 1\nmux_con = $mux_con" >> "$config_file"
-    fi
-}
+                fi
+                echo -e "${GREEN}${CHECKMARK} Config created successfully.${NC}"
 
-create_service() {
-    local svc_name="$1" config_file="$2"
-    cat > "/etc/systemd/system/$svc_name" <<EOF
+                # === Step 5 & 6: Service name & systemd ===
+                base_name="backhaul.${protocol}"
+                service_path="/etc/systemd/system/${base_name}.service"
+                config_base="/root/backhaul/${base_name}.toml"
+                counter=1
+                while [[ -f "/etc/systemd/system/${base_name}.service" ]]; do
+                    counter=$((counter + 1))
+                    base_name="backhaul.${protocol}${counter}"
+                    service_path="/etc/systemd/system/${base_name}.service"
+                    config_base="/root/backhaul/${base_name}.toml"
+                done
+                mv "/root/backhaul/${protocol}.toml" "$config_base" 2>/dev/null || true
+                echo -e "${YELLOW}${ARROW} Using service name: ${CYAN}${base_name}${NC}"
+
+                if systemctl list-units --full -all | grep -q "${base_name}.service"; then
+                    echo -e "${YELLOW}${ARROW} Found existing ${base_name}.service – stopping and removing...${NC}"
+                    systemctl stop "${base_name}.service"
+                    systemctl disable "${base_name}.service"
+                    rm -f "$service_path"
+                fi
+
+                cat > "$service_path" <<EOF
 [Unit]
-Description=Backhaul Service
+Description=Backhaul ${protocol} Tunnel Service
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${DESTDIR}
-ExecStart=${DESTDIR}/backhaul -c ${config_file}
-Restart=on-failure
-RestartSec=5
+ExecStart=/root/backhaul/backhaul -c $config_base
+Restart=always
+RestartSec=3
 LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload
-    systemctl enable --now "$svc_name"
-}
 
-create_monitor() {
-    local proto="$1" svc_name="$2"
-    local monitor_script="/usr/local/bin/${proto}_monitor.sh"
-    local monitor_log="/var/log/${proto}_monitor.log"
-    rm -f /usr/local/bin/*_monitor.sh
-    cat > "$monitor_script" <<EOF
+                # === Step 7: Enable & start ===
+                echo -e "${YELLOW}${ARROW} Enabling and starting service...${NC}"
+                systemctl daemon-reload
+                systemctl enable --now "${base_name}.service"
+                systemctl daemon-reexec
+                if systemctl is-active --quiet "${base_name}.service"; then
+                    echo -e "${GREEN}${CHECKMARK} Service ${base_name}.service is active!${NC}"
+                else
+                    echo -e "${RED}${CROSS} Failed to start service. Use 'journalctl -xe' for logs.${NC}"
+                fi
+
+                # === Step 8: Monitor script ===
+                monitor_script="/usr/local/bin/${base_name}_monitor.sh"
+                LOG_FILE="/var/log/${base_name}_monitor.log"
+                rm -f "$monitor_script"
+                cat > "$monitor_script" <<EOF
 #!/bin/bash
-SERVICE_NAME="${svc_name}"
-LOG_FILE="$monitor_log"
+SERVICE_NAME="${base_name}.service"
+LOG_FILE="$LOG_FILE"
 MATCH_WORDS="error|fail|broken|timeout|warning"
 LOG=\$(journalctl -u "\$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 if echo "\$LOG" | grep -iE "\$MATCH_WORDS" >/dev/null 2>&1; then
@@ -183,19 +224,25 @@ if echo "\$LOG" | grep -iE "\$MATCH_WORDS" >/dev/null 2>&1; then
     fi
 fi
 EOF
-    chmod +x "$monitor_script"
-    cat > "/etc/systemd/system/${proto}-monitor.service" <<EOF
+                chmod +x "$monitor_script"
+
+                # === Step 9: Monitor service & timer ===
+                monitor_service="/etc/systemd/system/${base_name}-monitor.service"
+                monitor_timer="/etc/systemd/system/${base_name}-monitor.timer"
+
+                cat > "$monitor_service" <<EOF
 [Unit]
-Description=Monitor for Backhaul ${proto} Service
+Description=Monitor for ${base_name} Service
 After=network.target
 
 [Service]
 Type=oneshot
 ExecStart=$monitor_script
 EOF
-    cat > "/etc/systemd/system/${proto}-monitor.timer" <<EOF
+
+                cat > "$monitor_timer" <<EOF
 [Unit]
-Description=Run ${proto}-monitor every 2 minutes
+Description=Run ${base_name}-monitor every 2 minutes
 
 [Timer]
 OnUnitActiveSec=2min
@@ -204,76 +251,75 @@ AccuracySec=30s
 [Install]
 WantedBy=timers.target
 EOF
-    systemctl daemon-reexec
-    systemctl enable --now "${proto}-monitor.timer"
-}
 
-install_flow() {
-    clear
-    echo -e "${BLUE}${BOLD}===== Raga Backhaul Installer =====${RESET}"
-    arch=$(detect_arch)
-    tmpd=$(mktemp -d)
-    trap "rm -rf $tmpd" EXIT
-    download_backhaul "$arch" "$tmpd"
-    role=$(get_role)
-    proto=$(prompt_protocol)
-    if [[ "$role" == "server" ]]; then
-        read -r tunnel_port user_port <<< "$(prompt_ports_server)"
-    else
-        read -r tunnel_port <<< "$(prompt_ports_server)"
-        user_port=""
-    fi
-    [[ "$proto" =~ mux ]] && mux_con=$(prompt_mux) || mux_con=""
-    # config & service name with counter
-    base_name="$proto"
-    config_file="$DESTDIR/$base_name.toml"
-    svc_name="backhaul.$proto.service"
-    counter=1
-    while [[ -f "$config_file" || -f "/etc/systemd/system/$svc_name" ]]; do
-        counter=$((counter+1))
-        config_file="$DESTDIR/${base_name}${counter}.toml"
-        svc_name="backhaul.${proto}${counter}.service"
+                systemctl daemon-reload
+                systemctl enable --now "${base_name}-monitor.timer"
+
+                echo -e "${GREEN}${CHECKMARK} Monitor and timer created for ${base_name}.${NC}"
+                echo -e "${GREEN}🎉 Installation completed successfully!${NC}"
+            }
+
+            install_backhaul
+            break
+            ;;
+2)
+    # ============================
+    # Uninstall (interactive light, full cleanup)
+    # ============================
+    echo -e "${YELLOW}${ARROW} Interactive Uninstall: Select services to remove${NC}"
+    while true; do
+        # گرفتن لیست سرویس‌ها
+        mapfile -t services < <(systemctl list-units --full -all | grep 'backhaul\.' | awk '{print $1}')
+        if [[ ${#services[@]} -eq 0 ]]; then
+            echo -e "${GREEN}No Backhaul services found.${NC}"
+            break
+        fi
+
+        echo -e "${LINE}"
+        echo -e "${CYAN}Available Backhaul Services:${NC}"
+        for i in "${!services[@]}"; do
+            printf "[%d] %s\n" "$((i+1))" "${services[i]}"
+        done
+        echo -e "[0] Exit Uninstall"
+        echo -e "${LINE}"
+
+        read -rp "Select a service to remove (number): " sel
+        if [[ "$sel" == "0" ]]; then
+            echo -e "${CYAN}Exiting uninstall...${NC}"
+            break
+        elif [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= ${#services[@]} )); then
+            svc="${services[$((sel-1))]}"
+            echo -e "${RED}${ARROW} Stopping and removing $svc ...${NC}"
+
+            # توقف و حذف سرویس اصلی
+            systemctl stop "$svc"
+            systemctl disable "$svc"
+            rm -f "/etc/systemd/system/$svc"
+
+            # حذف مانیتور مربوطه
+            monitor="/usr/local/bin/$(basename "$svc" .service)_monitor.sh"
+            [[ -f "$monitor" ]] && rm -f "$monitor"
+
+            # حذف سرویس و تایمر مانیتور مربوطه
+            monitor_service="/etc/systemd/system/$(basename "$svc" .service)-monitor.service"
+            monitor_timer="/etc/systemd/system/$(basename "$svc" .service)-monitor.timer"
+            [[ -f "$monitor_service" ]] && rm -f "$monitor_service"
+            [[ -f "$monitor_timer" ]] && rm -f "$monitor_timer"
+
+            systemctl daemon-reload
+            echo -e "${GREEN}${CHECKMARK} $svc and its monitor/timer removed.${NC}"
+        else
+            echo -e "${RED}Invalid selection. Try again.${NC}"
+        fi
     done
-    generate_config "$role" "$proto" "$tunnel_port" "$user_port" "$mux_con" "$config_file"
-    create_service "$svc_name" "$config_file"
-    create_monitor "$proto" "$svc_name"
-    log "Raga Backhaul installed with protocol $proto on tunnel port $tunnel_port and user port $user_port"
-}
-
-list_services() {
-    systemctl list-units --type=service | grep "backhaul"
-}
-
-uninstall_flow() {
-    clear
-    echo -e "${RED}${BOLD}===== Raga Backhaul Uninstaller =====${RESET}"
-    list_services
-    read -rp "Enter exact service name to remove: " svc
-    systemctl stop "$svc"
-    systemctl disable "$svc"
-    rm -f "/etc/systemd/system/$svc"
-    rm -f "/usr/local/bin/${svc#backhaul.}_monitor.sh"
-    rm -f "/etc/systemd/system/${svc#backhaul.}-monitor.service"
-    rm -f "/etc/systemd/system/${svc#backhaul.}-monitor.timer"
-    systemctl daemon-reload
-    log "Service $svc removed"
-}
-
-# =====================
-# Main menu
-# =====================
-while true; do
-    clear
-    echo -e "${BLUE}${BOLD}===== Raga Backhaul Installer / Uninstaller =====${RESET}"
-    echo -e "${YELLOW}1) Install Backhaul${RESET}"
-    echo -e "${RED}2) Uninstall Backhaul${RESET}"
-    echo -e "${BOLD}3) Exit${RESET}"
-    read -rp "Enter choice [1-3]: " choice
-    case "$choice" in
-        1) install_flow ;;
-        2) uninstall_flow ;;
-        3) exit 0 ;;
-        *) warn "Invalid choice" ;;
+    break
+    ;;
+        0)
+            echo -e "${CYAN}Exiting...${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Invalid option, choose again.${NC}"
+            ;;
     esac
-    read -rp "Press enter to continue..." dummy
 done
