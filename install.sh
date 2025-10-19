@@ -52,25 +52,24 @@ while true; do
                 cd /root/backhaul || { echo -e "${RED}${CROSS} Failed to access /root/backhaul.${NC}"; exit 1; }
 
                 # Check if Backhaul already exists
-                if [[ -x "/root/backhaul/backhaul" ]]; then
-                    echo -e "${GREEN}${CHECKMARK} Existing Backhaul binary detected – skipping download.${NC}"
-                else
-                    echo -e "${YELLOW}${ARROW} Downloading Backhaul binary for your architecture...${NC}"
-                    arch=$(uname -m)
-                    case "$arch" in
-                        x86_64) file_name="backhaul_linux_amd64.tar.gz" ;;
-                        aarch64) file_name="backhaul_linux_arm64.tar.gz" ;;
-                        armv7l) file_name="backhaul_linux_armv7.tar.gz" ;;
-                        *) echo -e "${RED}${CROSS} Unsupported architecture: $arch${NC}"; exit 1 ;;
-                    esac
-                    url="https://github.com/Musixal/Backhaul/releases/download/v0.7.2/$file_name"
-                    wget -q --show-progress "$url" -O "$file_name" || { echo -e "${RED}${CROSS} Download failed.${NC}"; exit 1; }
-                    tar xvf "$file_name" > /dev/null
-                    mv backhaul_linux_* backhaul 2>/dev/null || true
-                    rm "$file_name"
-                    chmod +x backhaul
-                    echo -e "${GREEN}${CHECKMARK} Backhaul downloaded and ready.${NC}"
-                fi
+                echo -e "${YELLOW}${ARROW} Downloading Backhaul binary for your architecture...${NC}"
+                arch=$(uname -m)
+                case "$arch" in
+                    x86_64) file_name="backhaul_linux_amd64.tar.gz" ;;
+                    aarch64) file_name="backhaul_linux_arm64.tar.gz" ;;
+                    armv7l) file_name="backhaul_linux_armv7.tar.gz" ;;
+                    *) echo -e "${RED}${CROSS} Unsupported architecture: $arch${NC}"; exit 1 ;;
+                esac
+
+                url="https://github.com/Musixal/Backhaul/releases/download/v0.7.2/$file_name"
+                wget -q --show-progress "$url" -O "$file_name" || { echo -e "${RED}${CROSS} Download failed.${NC}"; exit 1; }
+
+                tar -xzf "$file_name"
+                mv backhaul* backhaul 2>/dev/null || { echo -e "${RED}${CROSS} Failed to prepare binary.${NC}"; exit 1; }
+                rm "$file_name"
+                chmod +x backhaul
+                echo -e "${GREEN}${CHECKMARK} Backhaul downloaded and ready.${NC}"
+
 
                 # Step 2: Get user input
                 echo -e "${YELLOW}${ARROW} Select the tunnel protocol:${NC}"
@@ -108,7 +107,7 @@ keepalive_period = 75
 nodelay = false
 channel_size = 2048
 heartbeat = 40
-mux_con = 8
+mux_con = 16
 mux_version = 1
 mux_framesize = 32768
 mux_recievebuffer = 4194304
@@ -118,7 +117,7 @@ web_port = $web_port
 sniffer_log = "/root/log.json"
 log_level = "info"
 skip_optz = true
-mss = 1360
+mss = 1320
 so_rcvbuf = 4194304
 so_sndbuf = 1048576
 EOF
@@ -151,7 +150,7 @@ web_port = $web_port
 sniffer_log = "/root/log.json"
 log_level = "info"
 skip_optz = true
-mss = 1360
+mss = 1320
 so_rcvbuf = 1048576
 so_sndbuf = 4194304
 EOF
@@ -306,6 +305,14 @@ EOF
             monitor_timer="/etc/systemd/system/$(basename "$svc" .service)-monitor.timer"
             [[ -f "$monitor_service" ]] && rm -f "$monitor_service"
             [[ -f "$monitor_timer" ]] && rm -f "$monitor_timer"
+
+            #Delete File
+
+            config_file="/root/backhaul/$(basename "$svc" .service).toml"
+            [[ -f "$config_file" ]] && rm -f "$config_file"
+            mapfile -t services < <(systemctl list-units --full -all | grep 'backhaul\.' | awk '{print $1}')
+            find /root/backhaul -type f -name "backhaul.*.toml" -empty -delete 2>/dev/null
+
 
             systemctl daemon-reload
             echo -e "${GREEN}${CHECKMARK} $svc and its monitor/timer removed.${NC}"
