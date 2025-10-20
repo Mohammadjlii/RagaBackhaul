@@ -35,11 +35,8 @@ while true; do
     read -rp "Select an option: " choice
 
     case $choice in
+# ============================ INSTALL ============================
         1)
-            # ============================
-            # Install Backhaul (full script)
-            # ============================
-            # Call the install routine as a function to keep clean
             install_backhaul() {
                 clear
                 echo -e "${CYAN} $LINE"
@@ -51,7 +48,7 @@ while true; do
                 mkdir -p /root/backhaul
                 cd /root/backhaul || { echo -e "${RED}${CROSS} Failed to access /root/backhaul.${NC}"; exit 1; }
 
-                # Check if Backhaul already exists
+                # === Step 2: Download binary ===
                 echo -e "${YELLOW}${ARROW} Downloading Backhaul binary for your architecture...${NC}"
                 arch=$(uname -m)
                 case "$arch" in
@@ -64,14 +61,19 @@ while true; do
                 url="https://github.com/Musixal/Backhaul/releases/download/v0.7.2/$file_name"
                 wget -q --show-progress "$url" -O "$file_name" || { echo -e "${RED}${CROSS} Download failed.${NC}"; exit 1; }
 
+                echo -e "${YELLOW}${ARROW} Extracting Backhaul binary...${NC}"
                 tar -xzf "$file_name"
-                mv backhaul* backhaul 2>/dev/null || { echo -e "${RED}${CROSS} Failed to prepare binary.${NC}"; exit 1; }
-                rm "$file_name"
+                extracted_bin=$(find . -type f -name "backhaul" -perm -u+x | head -n 1)
+                if [[ -z "$extracted_bin" ]]; then
+                    echo -e "${RED}${CROSS} Backhaul binary not found inside archive.${NC}"
+                    exit 1
+                fi
+                mv "$extracted_bin" ./backhaul || { echo -e "${RED}${CROSS} Failed to move binary.${NC}"; exit 1; }
+                rm -rf "$file_name" backhaul_*/
                 chmod +x backhaul
                 echo -e "${GREEN}${CHECKMARK} Backhaul downloaded and ready.${NC}"
 
-
-                # Step 2: Get user input
+                # === Step 3: Get user input ===
                 echo -e "${YELLOW}${ARROW} Select the tunnel protocol:${NC}"
                 select protocol in "tcp" "ws" "wss" "tcpmux" "wsmux" "wssmux"; do
                     case $protocol in
@@ -80,14 +82,13 @@ while true; do
                     esac
                 done
 
-
-                # === Step 3: Detect role ===
+                # === Step 4: Detect role ===
                 public_ip=$(curl -s https://api.ipify.org || echo "0.0.0.0")
                 country=$(curl -s "http://ip-api.com/line/$public_ip?fields=countryCode" || echo "XX")
                 if [[ "$country" == "IR" ]]; then role="server"; else role="client"; fi
                 echo -e "${CYAN}Public IP: ${GREEN}$public_ip${NC} | Country: ${GREEN}$country${NC} → Role: ${YELLOW}$role${NC}"
 
-                # === Step 4: Create config file ===
+                # === Step 5: Create config file ===
                 config_path="/root/backhaul/${protocol}.toml"
                 token="RagaCloud"
                 tls_cert="/root/cert.crt"
@@ -101,17 +102,17 @@ while true; do
 [server]
 bind_addr = "0.0.0.0:$tunnel_port"
 transport = "$protocol"
-accept_udp = false
 token = "$token"
-keepalive_period = 75
-nodelay = false
-channel_size = 2048
-heartbeat = 40
 mux_con = 16
 mux_version = 1
 mux_framesize = 32768
 mux_recievebuffer = 4194304
 mux_streambuffer = 65536
+keepalive_period = 75
+channel_size = 2048
+accept_udp = false
+heartbeat = 40
+nodelay = false
 sniffer = false
 web_port = $web_port
 sniffer_log = "/root/log.json"
@@ -132,19 +133,18 @@ EOF
                     cat > "$config_path" <<EOF
 [client]
 remote_addr = "$target_address:$tunnel_port"
-edge_ip = ""
 transport = "$protocol"
 token = "$token"
 connection_pool = 8
-aggressive_pool = false
 keepalive_period = 75
-nodelay = false
-retry_interval = 3
-dial_timeout = 10
 mux_version = 1
 mux_framesize = 32768
 mux_recievebuffer = 4194304
 mux_streambuffer = 65536
+retry_interval = 3
+dial_timeout = 10
+aggressive_pool = false
+nodelay = false
 sniffer = false
 web_port = $web_port
 sniffer_log = "/root/log.json"
@@ -157,7 +157,7 @@ EOF
                 fi
                 echo -e "${GREEN}${CHECKMARK} Config created successfully.${NC}"
 
-                # === Step 5 & 6: Service name & systemd ===
+                # === Step 6: Service ===
                 base_name="backhaul.${protocol}"
                 service_path="/etc/systemd/system/${base_name}.service"
                 config_base="/root/backhaul/${base_name}.toml"
@@ -169,18 +169,10 @@ EOF
                     config_base="/root/backhaul/${base_name}.toml"
                 done
                 mv "/root/backhaul/${protocol}.toml" "$config_base" 2>/dev/null || true
-                echo -e "${YELLOW}${ARROW} Using service name: ${CYAN}${base_name}${NC}"
-
-                if systemctl list-units --full -all | grep -q "${base_name}.service"; then
-                    echo -e "${YELLOW}${ARROW} Found existing ${base_name}.service – stopping and removing...${NC}"
-                    systemctl stop "${base_name}.service"
-                    systemctl disable "${base_name}.service"
-                    rm -f "$service_path"
-                fi
 
                 cat > "$service_path" <<EOF
 [Unit]
-Description=Backhaul ${protocol} Tunnel Service
+Description=Backhaul ${protocol} Tunnel
 After=network.target
 
 [Service]
@@ -194,55 +186,33 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-                # === Step 7: Enable & start ===
-                echo -e "${YELLOW}${ARROW} Enabling and starting service...${NC}"
                 systemctl daemon-reload
                 systemctl enable --now "${base_name}.service"
-                systemctl daemon-reexec
+
                 if systemctl is-active --quiet "${base_name}.service"; then
-                    echo -e "${GREEN}${CHECKMARK} Service ${base_name}.service is active!${NC}"
+                    echo -e "${GREEN}${CHECKMARK} ${base_name}.service is active.${NC}"
                 else
-                    echo -e "${RED}${CROSS} Failed to start service. Use 'journalctl -xe' for logs.${NC}"
+                    echo -e "${RED}${CROSS} Failed to start ${base_name}.service.${NC}"
                 fi
 
-                # === Step 8: Monitor script ===
+                # === Step 7: Monitor Timer ===
                 monitor_script="/usr/local/bin/${base_name}_monitor.sh"
-                LOG_FILE="/var/log/${base_name}_monitor.log"
-                rm -f "$monitor_script"
                 cat > "$monitor_script" <<EOF
 #!/bin/bash
 SERVICE_NAME="${base_name}.service"
-LOG_FILE="$LOG_FILE"
+LOG_FILE="/var/log/${base_name}_monitor.log"
 MATCH_WORDS="error|fail|broken|timeout|warning"
 LOG=\$(journalctl -u "\$SERVICE_NAME" --since "2 minutes ago" --no-pager -o cat)
 if echo "\$LOG" | grep -iE "\$MATCH_WORDS" >/dev/null 2>&1; then
-    echo "\$(date): Log issue detected – restarting \$SERVICE_NAME" >> "\$LOG_FILE"
-    if systemctl restart "\$SERVICE_NAME"; then
-        echo "\$(date): \$SERVICE_NAME successfully restarted." >> "\$LOG_FILE"
-    else
-        echo "\$(date): Failed to restart \$SERVICE_NAME!" >> "\$LOG_FILE"
-    fi
+    echo "\$(date): Restarting \$SERVICE_NAME due to log issue..." >> "\$LOG_FILE"
+    systemctl restart "\$SERVICE_NAME"
 fi
 EOF
                 chmod +x "$monitor_script"
 
-                # === Step 9: Monitor service & timer ===
-                monitor_service="/etc/systemd/system/${base_name}-monitor.service"
-                monitor_timer="/etc/systemd/system/${base_name}-monitor.timer"
-
-                cat > "$monitor_service" <<EOF
+                cat > "/etc/systemd/system/${base_name}-monitor.timer" <<EOF
 [Unit]
-Description=Monitor for ${base_name} Service
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=$monitor_script
-EOF
-
-                cat > "$monitor_timer" <<EOF
-[Unit]
-Description=Run ${base_name}-monitor every 2 minutes
+Description=Monitor ${base_name}
 
 [Timer]
 OnUnitActiveSec=2min
@@ -252,82 +222,72 @@ AccuracySec=30s
 WantedBy=timers.target
 EOF
 
+                cat > "/etc/systemd/system/${base_name}-monitor.service" <<EOF
+[Unit]
+Description=Monitor for ${base_name}
+[Service]
+Type=oneshot
+ExecStart=$monitor_script
+EOF
+
                 systemctl daemon-reload
                 systemctl enable --now "${base_name}-monitor.timer"
 
-                echo -e "${GREEN}${CHECKMARK} Monitor and timer created for ${base_name}.${NC}"
+                echo -e "${GREEN}${CHECKMARK} Monitor timer created for ${base_name}.${NC}"
                 echo -e "${GREEN}🎉 Installation completed successfully!${NC}"
             }
-
             install_backhaul
             break
             ;;
-2)
-    # ============================
-    # Uninstall (interactive light, full cleanup)
-    # ============================
-    echo -e "${YELLOW}${ARROW} Interactive Uninstall: Select services to remove${NC}"
-    while true; do
-        # گرفتن لیست سرویس‌ها
-        mapfile -t services < <(systemctl list-units --full -all | grep 'backhaul\.' | awk '{print $1}')
-        if [[ ${#services[@]} -eq 0 ]]; then
-            echo -e "${GREEN}No Backhaul services found.${NC}"
+# ============================ UNINSTALL ============================
+        2)
+            echo -e "${YELLOW}${ARROW} Interactive Uninstall: Select services to remove${NC}"
+            while true; do
+                mapfile -t services < <(systemctl list-units --full -all | grep 'backhaul\.' | awk '{print $1}')
+                if [[ ${#services[@]} -eq 0 ]]; then
+                    echo -e "${GREEN}No Backhaul services found.${NC}"
+                    break
+                fi
+
+                echo -e "${LINE}"
+                echo -e "${CYAN}Available Backhaul Services:${NC}"
+                for i in "${!services[@]}"; do
+                    printf "[%d] %s\n" "$((i+1))" "${services[i]}"
+                done
+                echo -e "[0] Exit Uninstall"
+                echo -e "${LINE}"
+
+                read -rp "Select a service to remove (number): " sel
+                if [[ "$sel" == "0" ]]; then
+                    echo -e "${CYAN}Exiting uninstall...${NC}"
+                    break
+                elif [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= ${#services[@]} )); then
+                    svc="${services[$((sel-1))]}"
+                    echo -e "${RED}${ARROW} Removing $svc ...${NC}"
+                    systemctl stop "$svc"
+                    systemctl disable "$svc"
+                    rm -f "/etc/systemd/system/$svc"
+
+                    base="$(basename "$svc" .service)"
+                    rm -f "/usr/local/bin/${base}_monitor.sh"
+                    rm -f "/etc/systemd/system/${base}-monitor.service"
+                    rm -f "/etc/systemd/system/${base}-monitor.timer"
+                    rm -f "/root/backhaul/${base}.toml"
+
+                    systemctl daemon-reload
+                    echo -e "${GREEN}${CHECKMARK} $svc and its related files removed.${NC}"
+                else
+                    echo -e "${RED}Invalid selection.${NC}"
+                fi
+            done
             break
-        fi
-
-        echo -e "${LINE}"
-        echo -e "${CYAN}Available Backhaul Services:${NC}"
-        for i in "${!services[@]}"; do
-            printf "[%d] %s\n" "$((i+1))" "${services[i]}"
-        done
-        echo -e "[0] Exit Uninstall"
-        echo -e "${LINE}"
-
-        read -rp "Select a service to remove (number): " sel
-        if [[ "$sel" == "0" ]]; then
-            echo -e "${CYAN}Exiting uninstall...${NC}"
-            break
-        elif [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= ${#services[@]} )); then
-            svc="${services[$((sel-1))]}"
-            echo -e "${RED}${ARROW} Stopping and removing $svc ...${NC}"
-
-            # توقف و حذف سرویس اصلی
-            systemctl stop "$svc"
-            systemctl disable "$svc"
-            rm -f "/etc/systemd/system/$svc"
-
-            # حذف مانیتور مربوطه
-            monitor="/usr/local/bin/$(basename "$svc" .service)_monitor.sh"
-            [[ -f "$monitor" ]] && rm -f "$monitor"
-
-            # حذف سرویس و تایمر مانیتور مربوطه
-            monitor_service="/etc/systemd/system/$(basename "$svc" .service)-monitor.service"
-            monitor_timer="/etc/systemd/system/$(basename "$svc" .service)-monitor.timer"
-            [[ -f "$monitor_service" ]] && rm -f "$monitor_service"
-            [[ -f "$monitor_timer" ]] && rm -f "$monitor_timer"
-
-            #Delete File
-
-            config_file="/root/backhaul/$(basename "$svc" .service).toml"
-            [[ -f "$config_file" ]] && rm -f "$config_file"
-            mapfile -t services < <(systemctl list-units --full -all | grep 'backhaul\.' | awk '{print $1}')
-            find /root/backhaul -type f -name "backhaul.*.toml" -empty -delete 2>/dev/null
-
-
-            systemctl daemon-reload
-            echo -e "${GREEN}${CHECKMARK} $svc and its monitor/timer removed.${NC}"
-        else
-            echo -e "${RED}Invalid selection. Try again.${NC}"
-        fi
-    done
-    break
-    ;;
+            ;;
         0)
             echo -e "${CYAN}Exiting...${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}Invalid option, choose again.${NC}"
+            echo -e "${RED}Invalid option.${NC}"
             ;;
     esac
 done
